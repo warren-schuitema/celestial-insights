@@ -1,5 +1,6 @@
 'use client';
 
+// Updated Palm Reading Upload Component - Integrates OpenAI analysis with image upload
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +15,9 @@ export default function PalmReadingUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hand, setHand] = useState<string>('right');
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
   const { toast } = useToast();
   const { supabase, session } = useSupabase();
 
@@ -54,11 +57,34 @@ export default function PalmReadingUpload() {
     }
   };
 
+  // Convert file to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove the data:image/jpeg;base64, prefix
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
   const handleUpload = async () => {
     if (!file || !session) return;
     
     setIsUploading(true);
+    setAnalysisResult(null);
+    
     try {
+      // Step 1: Upload image to Supabase Storage
+      toast({
+        title: 'Uploading image...',
+        description: 'Please wait while we upload your palm image.',
+      });
+
       const fileExt = file.name.split('.').pop();
       const fileName = `${session.user.id}-palm-${hand}-${Date.now()}.${fileExt}`;
       const filePath = `palm-readings/${fileName}`;
@@ -70,38 +96,87 @@ export default function PalmReadingUpload() {
         
       if (uploadError) throw uploadError;
       
-      // Store record in database
-      const { error: dbError } = await supabase
+      // Step 2: Create initial database record
+      const { data: palmReadingData, error: dbError } = await supabase
         .from('palm_readings')
         .insert({
           user_id: session.user.id,
           image_path: filePath,
           hand_type: hand,
           status: 'pending'
-        });
+        })
+        .select('id')
+        .single();
         
       if (dbError) throw dbError;
-      
+
+      setIsUploading(false);
+      setIsAnalyzing(true);
+
+      // Step 3: Convert image to base64 for AI analysis
       toast({
-        title: 'Upload successful!',
-        description: 'Your palm image has been uploaded for analysis.',
+        title: 'Image uploaded successfully!',
+        description: 'Now analyzing your palm with AI...',
+      });
+
+      const imageBase64 = await fileToBase64(file);
+
+      // Step 4: Call OpenAI API for palm reading analysis
+      const response = await fetch('/api/palm-reading', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageBase64,
+          handType: hand,
+          userId: session.user.id,
+          userTier: 'free', // TODO: Get actual user tier from subscription
+          palmReadingId: palmReadingData.id
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Analysis failed');
+      }
+
+      const analysisData = await response.json();
+      setAnalysisResult(analysisData);
+
+      toast({
+        title: 'Palm reading complete!',
+        description: 'Your spiritual analysis is ready to view.',
       });
       
       // Reset form
       setFile(null);
       setPreview(null);
       
-      // In a real app, we would now trigger the AI analysis process
-      
     } catch (error: any) {
-      console.error('Upload error:', error);
+      console.error('Upload/Analysis error:', error);
+      
+      // Update status to failed if we have a palm reading ID
+      if (session) {
+        try {
+          await supabase
+            .from('palm_readings')
+            .update({ status: 'failed' })
+            .eq('user_id', session.user.id)
+            .eq('status', 'pending');
+        } catch (updateError) {
+          console.error('Error updating failed status:', updateError);
+        }
+      }
+
       toast({
-        title: 'Upload failed',
-        description: error.message || 'There was an error uploading your image. Please try again.',
+        title: 'Analysis failed',
+        description: error.message || 'There was an error analyzing your palm. Please try again.',
         variant: 'destructive',
       });
     } finally {
       setIsUploading(false);
+      setIsAnalyzing(false);
     }
   };
 
@@ -143,6 +218,7 @@ export default function PalmReadingUpload() {
                     setFile(null);
                     setPreview(null);
                   }}
+                  disabled={isUploading || isAnalyzing}
                 >
                   Change
                 </Button>
@@ -165,8 +241,9 @@ export default function PalmReadingUpload() {
                   className="hidden"
                   onChange={handleFileChange}
                   id="palm-upload"
+                  disabled={isUploading || isAnalyzing}
                 />
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="outline" size="sm" disabled={isUploading || isAnalyzing}>
                   <label htmlFor="palm-upload" className="cursor-pointer">
                     Select File
                   </label>
@@ -180,7 +257,7 @@ export default function PalmReadingUpload() {
             <p className="text-sm text-muted-foreground">
               The dominant hand (writing hand) shows your current path, while the non-dominant hand shows your potential.
             </p>
-            <RadioGroup value={hand} onValueChange={setHand} className="mt-2">
+            <RadioGroup value={hand} onValueChange={setHand} className="mt-2" disabled={isUploading || isAnalyzing}>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="right" id="right" />
                 <Label htmlFor="right">Right Hand (usually dominant for right-handed people)</Label>
@@ -195,7 +272,7 @@ export default function PalmReadingUpload() {
         <CardFooter>
           <Button 
             onClick={handleUpload} 
-            disabled={!file || isUploading}
+            disabled={!file || isUploading || isAnalyzing}
             className="w-full bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600"
           >
             {isUploading ? (
@@ -203,12 +280,56 @@ export default function PalmReadingUpload() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Uploading...
               </>
+            ) : isAnalyzing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analyzing with AI...
+              </>
             ) : (
               'Upload and Analyze'
             )}
           </Button>
         </CardFooter>
       </Card>
+      
+      {/* Analysis Results Card */}
+      {analysisResult && (
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-6 w-6 text-green-500" />
+              Your Palm Reading
+            </CardTitle>
+            <CardDescription>
+              AI-powered spiritual analysis of your palm
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <div className="whitespace-pre-wrap bg-muted/50 p-4 rounded-lg border">
+                {analysisResult.reading}
+              </div>
+            </div>
+            
+            {analysisResult.diagram && (
+              <div className="space-y-2">
+                <h4 className="font-medium">Mystical Hand Diagram</h4>
+                <div className="border rounded-lg overflow-hidden">
+                  <img 
+                    src={analysisResult.diagram} 
+                    alt="Tarot-mapped palm diagram" 
+                    className="w-full h-auto"
+                  />
+                </div>
+              </div>
+            )}
+            
+            <div className="text-xs text-muted-foreground">
+              Reading generated on {new Date(analysisResult.timestamp).toLocaleString()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       
       <Card>
         <CardHeader>
