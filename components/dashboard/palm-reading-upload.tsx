@@ -1,6 +1,6 @@
 'use client';
 
-// Enhanced Palm Reading Upload Component - Full integration with OpenAI analysis and voice oracle
+// Enhanced Palm Reading Upload Component - Fixed RLS issue by removing explicit user_id
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -154,11 +154,10 @@ export default function PalmReadingUpload() {
         
       if (uploadError) throw uploadError;
       
-      // Step 2: Create initial database record
+      // Step 2: Create initial database record - REMOVED explicit user_id
       const { data: palmReadingData, error: dbError } = await supabase
         .from('palm_readings')
         .insert({
-          user_id: session.user.id,
           image_path: filePath,
           hand_type: hand,
           status: 'pending'
@@ -225,7 +224,6 @@ export default function PalmReadingUpload() {
           await supabase
             .from('palm_readings')
             .update({ status: 'failed' })
-            .eq('user_id', session.user.id)
             .eq('status', 'pending');
         } catch (updateError) {
           console.error('Error updating failed status:', updateError);
