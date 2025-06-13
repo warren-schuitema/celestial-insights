@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+// Updated Dashboard Page - Fixed tab navigation using URL query parameters
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +15,9 @@ import BirthChartForm from '@/components/dashboard/birth-chart-form';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session } = useSupabase();
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     // If not logged in, redirect to login
@@ -22,6 +25,21 @@ export default function DashboardPage() {
       router.push('/login');
     }
   }, [session, router]);
+
+  useEffect(() => {
+    // Read tab from URL query parameters
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && ['overview', 'palm-reading', 'birth-chart', 'insights'].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    // Update URL without page reload
+    const newUrl = value === 'overview' ? '/dashboard' : `/dashboard?tab=${value}`;
+    router.push(newUrl, { scroll: false });
+  };
 
   if (session === null) {
     return null; // Don't render anything while redirecting
@@ -32,7 +50,7 @@ export default function DashboardPage() {
       <div className="container px-4 md:px-6">
         <DashboardHeader />
         
-        <Tabs defaultValue="overview" className="mt-8">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-8">
           <TabsList className="grid grid-cols-4 mb-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="palm-reading">Palm Reading</TabsTrigger>
@@ -106,11 +124,11 @@ export default function DashboardPage() {
                         <p className="text-sm text-muted-foreground">
                           Upload a clear photo of your palm to receive AI-powered insights about your life path.
                         </p>
-                        <Button variant="link" asChild className="p-0 h-auto">
-                          <Link href="#" onClick={() => document.querySelector('[data-value="palm-reading"]')?.click()}>
+                        <Link href="/dashboard?tab=palm-reading">
+                          <Button variant="link" className="p-0 h-auto">
                             Start a palm reading
-                          </Link>
-                        </Button>
+                          </Button>
+                        </Link>
                       </div>
                     </div>
                     
@@ -123,11 +141,11 @@ export default function DashboardPage() {
                         <p className="text-sm text-muted-foreground">
                           Enter your birth details to generate a complete astrological profile and interpretation.
                         </p>
-                        <Button variant="link" asChild className="p-0 h-auto">
-                          <Link href="#" onClick={() => document.querySelector('[data-value="birth-chart"]')?.click()}>
+                        <Link href="/dashboard?tab=birth-chart">
+                          <Button variant="link" className="p-0 h-auto">
                             Create a birth chart
-                          </Link>
-                        </Button>
+                          </Button>
+                        </Link>
                       </div>
                     </div>
                   </div>
@@ -181,12 +199,12 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <div className="flex gap-4 mt-4">
-                    <Button variant="outline" onClick={() => document.querySelector('[data-value="palm-reading"]')?.click()}>
-                      Get Palm Reading
-                    </Button>
-                    <Button variant="outline" onClick={() => document.querySelector('[data-value="birth-chart"]')?.click()}>
-                      Create Birth Chart
-                    </Button>
+                    <Link href="/dashboard?tab=palm-reading">
+                      <Button variant="outline">Get Palm Reading</Button>
+                    </Link>
+                    <Link href="/dashboard?tab=birth-chart">
+                      <Button variant="outline">Create Birth Chart</Button>
+                    </Link>
                   </div>
                 </div>
               </CardContent>
