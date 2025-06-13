@@ -1,12 +1,12 @@
 'use client';
 
-// Updated Palm Reading Upload Component - Integrates OpenAI analysis with image upload
+// Enhanced Palm Reading Upload Component - Full integration with OpenAI analysis and voice oracle
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { HandIcon as HandPalmIcon, Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { HandIcon as HandPalmIcon, Upload, Loader2, CheckCircle2, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { useSupabase } from '@/components/supabase-provider';
@@ -16,8 +16,11 @@ export default function PalmReadingUpload() {
   const [preview, setPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
   const [hand, setHand] = useState<string>('right');
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const { toast } = useToast();
   const { supabase, session } = useSupabase();
 
@@ -72,11 +75,66 @@ export default function PalmReadingUpload() {
     });
   };
 
+  const generateVoiceOracle = async (readingText: string) => {
+    if (!session) return;
+    
+    setIsGeneratingVoice(true);
+    try {
+      const response = await fetch('/api/voice-oracle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: readingText,
+          userId: session.user.id
+        }),
+      });
+
+      if (response.ok) {
+        const voiceData = await response.json();
+        if (voiceData.success) {
+          const audioBlob = new Blob([
+            Uint8Array.from(atob(voiceData.audio), c => c.charCodeAt(0))
+          ], { type: voiceData.mimeType });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          setAudioUrl(audioUrl);
+          
+          toast({
+            title: 'Voice oracle ready!',
+            description: 'Your reading is now available in mystical voice form.',
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        if (response.status === 403) {
+          toast({
+            title: 'Premium feature',
+            description: 'Voice oracle is available for premium subscribers.',
+            variant: 'destructive',
+          });
+        } else {
+          throw new Error(errorData.error || 'Voice generation failed');
+        }
+      }
+    } catch (error: any) {
+      console.error('Voice generation error:', error);
+      toast({
+        title: 'Voice generation failed',
+        description: error.message || 'Could not generate voice oracle.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingVoice(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!file || !session) return;
     
     setIsUploading(true);
     setAnalysisResult(null);
+    setAudioUrl(null);
     
     try {
       // Step 1: Upload image to Supabase Storage
@@ -148,6 +206,11 @@ export default function PalmReadingUpload() {
         title: 'Palm reading complete!',
         description: 'Your spiritual analysis is ready to view.',
       });
+
+      // Step 5: Generate voice oracle for premium users (optional)
+      if (analysisData.reading) {
+        await generateVoiceOracle(analysisData.reading);
+      }
       
       // Reset form
       setFile(null);
@@ -177,6 +240,21 @@ export default function PalmReadingUpload() {
     } finally {
       setIsUploading(false);
       setIsAnalyzing(false);
+    }
+  };
+
+  const toggleAudio = () => {
+    if (!audioUrl) return;
+    
+    const audio = document.getElementById('palm-reading-audio') as HTMLAudioElement;
+    if (audio) {
+      if (isPlaying) {
+        audio.pause();
+        setIsPlaying(false);
+      } else {
+        audio.play();
+        setIsPlaying(true);
+      }
     }
   };
 
@@ -304,12 +382,65 @@ export default function PalmReadingUpload() {
               AI-powered spiritual analysis of your palm
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             <div className="prose prose-sm max-w-none dark:prose-invert">
-              <div className="whitespace-pre-wrap bg-muted/50 p-4 rounded-lg border">
+              <div className="whitespace-pre-wrap bg-muted/50 p-6 rounded-lg border">
                 {analysisResult.reading}
               </div>
             </div>
+            
+            {/* Voice Oracle Section */}
+            {audioUrl && (
+              <div className="space-y-4 p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg border">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-purple-500" />
+                    Voice Oracle
+                  </h4>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleAudio}
+                    className="flex items-center gap-2"
+                  >
+                    {isPlaying ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                    {isPlaying ? 'Pause' : 'Play'}
+                  </Button>
+                </div>
+                <audio
+                  id="palm-reading-audio"
+                  src={audioUrl}
+                  onEnded={() => setIsPlaying(false)}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  className="w-full"
+                  controls
+                />
+                <p className="text-xs text-muted-foreground">
+                  Listen to your palm reading narrated by our mystical voice oracle
+                </p>
+              </div>
+            )}
+
+            {/* Generate Voice Button for Premium Users */}
+            {analysisResult.reading && !audioUrl && !isGeneratingVoice && (
+              <Button
+                onClick={() => generateVoiceOracle(analysisResult.reading)}
+                variant="outline"
+                className="w-full"
+                disabled={isGeneratingVoice}
+              >
+                <Volume2 className="mr-2 h-4 w-4" />
+                Generate Voice Oracle (Premium)
+              </Button>
+            )}
+
+            {isGeneratingVoice && (
+              <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <span>Generating mystical voice oracle...</span>
+              </div>
+            )}
             
             {analysisResult.diagram && (
               <div className="space-y-2">
