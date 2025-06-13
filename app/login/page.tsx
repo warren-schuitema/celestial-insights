@@ -57,7 +57,6 @@ export default function LoginPage() {
       });
       
       router.push('/dashboard');
-      router.refresh();
     } catch (error: any) {
       toast({
         title: 'Login failed',
