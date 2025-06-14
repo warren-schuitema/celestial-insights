@@ -1,51 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useUser, useSupabaseClient, useSession } from '@supabase/auth-helpers-react';
+import { useState } from 'react';
+import { useSupabase } from '@/components/supabase-provider';
 
-export default function PalmReading() {
+export default function PalmReadingUpload() {
   const [imageFile, setImageFile] = useState(null);
   const [handType, setHandType] = useState('right');
   const [reading, setReading] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState('');
-  const [authLoading, setAuthLoading] = useState(true);
-  const [debugInfo, setDebugInfo] = useState('');
-  
-  const user = useUser();
-  const session = useSession();
-  const supabase = useSupabaseClient();
 
-  // Debug authentication state
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        console.log('🔍 Checking authentication state...');
-        console.log('👤 useUser():', user);
-        console.log('🎫 useSession():', session);
-        
-        // Alternative auth check
-        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
-        console.log('🔄 getSession():', currentSession);
-        console.log('❌ Auth error:', error);
-        
-        setDebugInfo(`
-          User Hook: ${user ? '✅ Found' : '❌ Null'}
-          Session Hook: ${session ? '✅ Found' : '❌ Null'}
-          Direct Session: ${currentSession ? '✅ Found' : '❌ Null'}
-          User Email: ${user?.email || currentSession?.user?.email || 'None'}
-        `);
-        
-        setAuthLoading(false);
-      } catch (err) {
-        console.error('Auth check error:', err);
-        setAuthLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, [user, session, supabase]);
+  // Use your custom Supabase provider
+  const { supabase, session } = useSupabase();
+  const user = session?.user;
 
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
@@ -84,10 +52,7 @@ export default function PalmReading() {
   };
 
   const generateReading = async () => {
-    // Use multiple auth checks
-    const currentUser = user || session?.user;
-    
-    if (!imageFile || !currentUser) {
+    if (!imageFile || !user) {
       setError('Please upload an image and ensure you are logged in');
       return;
     }
@@ -98,7 +63,7 @@ export default function PalmReading() {
 
     try {
       console.log('🔮 Starting secure palm reading...');
-      console.log('👤 Current user:', currentUser);
+      console.log('👤 Current user:', user.email);
 
       // Step 1: Ensure user profile exists
       let userTier = 'free';
@@ -106,7 +71,7 @@ export default function PalmReading() {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('subscription_tier')
-          .eq('id', currentUser.id)
+          .eq('id', user.id)
           .single();
 
         if (profileError && profileError.code === 'PGRST116') {
@@ -114,8 +79,8 @@ export default function PalmReading() {
           const { error: insertError } = await supabase
             .from('profiles')
             .insert({
-              id: currentUser.id,
-              email: currentUser.email,
+              id: user.id,
+              email: user.email,
               subscription_tier: 'free'
             });
           
@@ -141,7 +106,7 @@ export default function PalmReading() {
       const { data: palmReading, error: createError } = await supabase
         .from('palm_readings')
         .insert({
-          user_id: currentUser.id,
+          user_id: user.id,
           hand_type: handType,
           status: 'pending',
           tier: userTier
@@ -166,7 +131,7 @@ export default function PalmReading() {
         body: {
           imageBase64: imageBase64,
           handType: handType,
-          userId: currentUser.id,
+          userId: user.id,
           userTier: userTier,
           palmReadingId: palmReading.id
         }
@@ -197,43 +162,16 @@ export default function PalmReading() {
     }
   };
 
-  // Show loading state while checking auth
-  if (authLoading) {
+  if (!user) {
     return (
       <div className="max-w-2xl mx-auto p-6">
-        <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="bg-card rounded-lg shadow-lg p-8">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">🔮 Palm Reading Oracle</h2>
-            <p className="text-gray-600">Loading authentication state...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Use multiple sources for user data
-  const currentUser = user || session?.user;
-  
-  if (!currentUser) {
-    return (
-      <div className="max-w-2xl mx-auto p-6">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">🔮 Palm Reading Oracle</h2>
-            <p className="text-gray-600 mb-4">Please log in to access palm reading features.</p>
-            
-            {/* Debug information */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">🔍 Debug Information:</h3>
-              <pre className="text-xs text-gray-600 whitespace-pre-wrap">{debugInfo}</pre>
-              <button 
-                onClick={() => window.location.reload()} 
-                className="mt-2 text-blue-600 text-sm hover:underline"
-              >
-                🔄 Refresh Page
-              </button>
-            </div>
+            <h2 className="text-2xl font-bold text-foreground mb-4">🔮 Palm Reading Oracle</h2>
+            <p className="text-muted-foreground mb-4">Please log in to access palm reading features.</p>
+            <p className="text-sm text-muted-foreground">
+              If you're seeing this and you're logged in, please refresh the page.
+            </p>
           </div>
         </div>
       </div>
@@ -242,22 +180,22 @@ export default function PalmReading() {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <h2 className="text-3xl font-bold text-center text-gray-900 mb-8">
+      <div className="bg-card rounded-lg shadow-lg p-8">
+        <h2 className="text-3xl font-bold text-center text-foreground mb-8">
           🔮 Secure Palm Reading Oracle
         </h2>
 
         {/* Security & Auth Status */}
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <div className="mb-6 p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <span className="text-green-500 mr-2">🔐</span>
               <div>
-                <p className="text-green-700 text-sm font-medium">Secure Edge Function Active</p>
-                <p className="text-green-600 text-xs">Authenticated as: {currentUser.email}</p>
+                <p className="text-green-700 dark:text-green-300 text-sm font-medium">Secure Edge Function Active</p>
+                <p className="text-green-600 dark:text-green-400 text-xs">Authenticated as: {user.email}</p>
               </div>
             </div>
-            <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+            <span className="text-xs text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900 px-2 py-1 rounded">
               ✅ Authenticated
             </span>
           </div>
@@ -265,7 +203,7 @@ export default function PalmReading() {
 
         {/* Hand Type Selection */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Select Hand
           </label>
           <div className="flex space-x-4">
@@ -278,7 +216,7 @@ export default function PalmReading() {
                 onChange={(e) => setHandType(e.target.value)}
                 className="mr-2"
               />
-              Left Hand
+              <span className="text-foreground">Left Hand</span>
             </label>
             <label className="flex items-center">
               <input
@@ -289,23 +227,23 @@ export default function PalmReading() {
                 onChange={(e) => setHandType(e.target.value)}
                 className="mr-2"
               />
-              Right Hand
+              <span className="text-foreground">Right Hand</span>
             </label>
           </div>
         </div>
 
         {/* Image Upload */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Upload Palm Image
           </label>
           <input
             type="file"
             accept="image/*"
             onChange={handleImageUpload}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="w-full p-3 border border-border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-background text-foreground"
           />
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             📸 Upload a clear photo of your palm (max 5MB) - Processed via secure Edge Function
           </p>
         </div>
@@ -313,12 +251,12 @@ export default function PalmReading() {
         {/* Image Preview */}
         {imagePreview && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Preview</h3>
+            <h3 className="text-sm font-medium text-foreground mb-2">Preview</h3>
             <div className="flex justify-center">
               <img
                 src={imagePreview}
                 alt="Palm preview"
-                className="max-w-xs max-h-64 object-contain rounded-lg border"
+                className="max-w-xs max-h-64 object-contain rounded-lg border border-border"
               />
             </div>
           </div>
@@ -330,7 +268,7 @@ export default function PalmReading() {
           disabled={!imageFile || loading}
           className={`w-full py-3 px-6 rounded-lg font-medium transition-colors ${
             !imageFile || loading
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              ? 'bg-muted text-muted-foreground cursor-not-allowed'
               : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700'
           }`}
         >
@@ -346,15 +284,15 @@ export default function PalmReading() {
 
         {/* Error Display */}
         {error && (
-          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="mt-6 p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">
             <div className="flex">
               <div className="flex-shrink-0">
                 <span className="text-red-400">⚠️</span>
               </div>
               <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Error</h3>
-                <p className="text-red-700 text-sm mt-1">{error}</p>
-                <p className="text-red-600 text-xs mt-1">Check browser console for detailed logs</p>
+                <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Error</h3>
+                <p className="text-red-700 dark:text-red-300 text-sm mt-1">{error}</p>
+                <p className="text-red-600 dark:text-red-400 text-xs mt-1">Check browser console for detailed logs</p>
               </div>
             </div>
           </div>
@@ -362,20 +300,20 @@ export default function PalmReading() {
 
         {/* Reading Results */}
         {reading && (
-          <div className="mt-8 p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+          <div className="mt-8 p-6 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950 dark:to-blue-950 rounded-lg border border-purple-200 dark:border-purple-800">
             <div className="flex items-center mb-4">
               <span className="text-purple-600 mr-2">🔮</span>
-              <h3 className="text-xl font-semibold text-gray-900">
+              <h3 className="text-xl font-semibold text-foreground">
                 Your Mystical Palm Reading
               </h3>
-              <span className="ml-auto text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+              <span className="ml-auto text-xs text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900 px-2 py-1 rounded">
                 🔐 Secure
               </span>
             </div>
-            <div className="prose prose-purple max-w-none">
+            <div className="prose prose-purple max-w-none dark:prose-invert">
               {reading.split('\n').map((paragraph, index) => (
                 paragraph.trim() && (
-                  <p key={index} className="mb-3 text-gray-700 leading-relaxed">
+                  <p key={index} className="mb-3 text-foreground leading-relaxed">
                     {paragraph}
                   </p>
                 )
@@ -384,14 +322,13 @@ export default function PalmReading() {
           </div>
         )}
 
-        {/* Debug Info (can remove this later) */}
-        {debugInfo && (
-          <details className="mt-6">
-            <summary className="text-sm text-gray-500 cursor-pointer">🔍 Debug Info (Click to expand)</summary>
-            <div className="mt-2 p-3 bg-gray-50 rounded text-xs text-gray-600">
-              <pre className="whitespace-pre-wrap">{debugInfo}</pre>
-            </div>
-          </details>
+        {/* Success Message */}
+        {reading && (
+          <div className="mt-4 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+            <p className="text-green-700 dark:text-green-300 text-sm text-center">
+              🎉 Your palm reading has been successfully generated and saved to your account!
+            </p>
+          </div>
         )}
       </div>
     </div>
