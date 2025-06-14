@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useState, useEffect } from 'react';
+import { useUser, useSupabaseClient, useSession } from '@supabase/auth-helpers-react';
 
 export default function PalmReading() {
   const [imageFile, setImageFile] = useState(null);
@@ -10,9 +10,42 @@ export default function PalmReading() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [imagePreview, setImagePreview] = useState('');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [debugInfo, setDebugInfo] = useState('');
   
   const user = useUser();
+  const session = useSession();
   const supabase = useSupabaseClient();
+
+  // Debug authentication state
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        console.log('🔍 Checking authentication state...');
+        console.log('👤 useUser():', user);
+        console.log('🎫 useSession():', session);
+        
+        // Alternative auth check
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        console.log('🔄 getSession():', currentSession);
+        console.log('❌ Auth error:', error);
+        
+        setDebugInfo(`
+          User Hook: ${user ? '✅ Found' : '❌ Null'}
+          Session Hook: ${session ? '✅ Found' : '❌ Null'}
+          Direct Session: ${currentSession ? '✅ Found' : '❌ Null'}
+          User Email: ${user?.email || currentSession?.user?.email || 'None'}
+        `);
+        
+        setAuthLoading(false);
+      } catch (err) {
+        console.error('Auth check error:', err);
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [user, session, supabase]);
 
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
@@ -51,7 +84,10 @@ export default function PalmReading() {
   };
 
   const generateReading = async () => {
-    if (!imageFile || !user) {
+    // Use multiple auth checks
+    const currentUser = user || session?.user;
+    
+    if (!imageFile || !currentUser) {
       setError('Please upload an image and ensure you are logged in');
       return;
     }
@@ -62,6 +98,7 @@ export default function PalmReading() {
 
     try {
       console.log('🔮 Starting secure palm reading...');
+      console.log('👤 Current user:', currentUser);
 
       // Step 1: Ensure user profile exists
       let userTier = 'free';
@@ -69,7 +106,7 @@ export default function PalmReading() {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('subscription_tier')
-          .eq('id', user.id)
+          .eq('id', currentUser.id)
           .single();
 
         if (profileError && profileError.code === 'PGRST116') {
@@ -77,8 +114,8 @@ export default function PalmReading() {
           const { error: insertError } = await supabase
             .from('profiles')
             .insert({
-              id: user.id,
-              email: user.email,
+              id: currentUser.id,
+              email: currentUser.email,
               subscription_tier: 'free'
             });
           
@@ -87,7 +124,8 @@ export default function PalmReading() {
           }
           userTier = 'free';
         } else if (profileError) {
-          throw new Error(`Profile error: ${profileError.message}`);
+          console.warn('Profile error:', profileError);
+          userTier = 'free'; // Continue with free tier
         } else {
           userTier = profile?.subscription_tier || 'free';
         }
@@ -103,7 +141,7 @@ export default function PalmReading() {
       const { data: palmReading, error: createError } = await supabase
         .from('palm_readings')
         .insert({
-          user_id: user.id,
+          user_id: currentUser.id,
           hand_type: handType,
           status: 'pending',
           tier: userTier
@@ -128,7 +166,7 @@ export default function PalmReading() {
         body: {
           imageBase64: imageBase64,
           handType: handType,
-          userId: user.id,
+          userId: currentUser.id,
           userTier: userTier,
           palmReadingId: palmReading.id
         }
@@ -159,12 +197,44 @@ export default function PalmReading() {
     }
   };
 
-  if (!user) {
+  // Show loading state while checking auth
+  if (authLoading) {
     return (
       <div className="max-w-2xl mx-auto p-6">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">🔮 Palm Reading Oracle</h2>
-          <p className="text-gray-600">Please log in to access palm reading features.</p>
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">🔮 Palm Reading Oracle</h2>
+            <p className="text-gray-600">Loading authentication state...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Use multiple sources for user data
+  const currentUser = user || session?.user;
+  
+  if (!currentUser) {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">🔮 Palm Reading Oracle</h2>
+            <p className="text-gray-600 mb-4">Please log in to access palm reading features.</p>
+            
+            {/* Debug information */}
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">🔍 Debug Information:</h3>
+              <pre className="text-xs text-gray-600 whitespace-pre-wrap">{debugInfo}</pre>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="mt-2 text-blue-600 text-sm hover:underline"
+              >
+                🔄 Refresh Page
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -177,14 +247,19 @@ export default function PalmReading() {
           🔮 Secure Palm Reading Oracle
         </h2>
 
-        {/* Security Notice */}
+        {/* Security & Auth Status */}
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center">
-            <span className="text-green-500 mr-2">🔐</span>
-            <div>
-              <p className="text-green-700 text-sm font-medium">Secure Edge Function Active</p>
-              <p className="text-green-600 text-xs">Your API keys are protected and never exposed to the client</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <span className="text-green-500 mr-2">🔐</span>
+              <div>
+                <p className="text-green-700 text-sm font-medium">Secure Edge Function Active</p>
+                <p className="text-green-600 text-xs">Authenticated as: {currentUser.email}</p>
+              </div>
             </div>
+            <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+              ✅ Authenticated
+            </span>
           </div>
         </div>
 
@@ -307,6 +382,16 @@ export default function PalmReading() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* Debug Info (can remove this later) */}
+        {debugInfo && (
+          <details className="mt-6">
+            <summary className="text-sm text-gray-500 cursor-pointer">🔍 Debug Info (Click to expand)</summary>
+            <div className="mt-2 p-3 bg-gray-50 rounded text-xs text-gray-600">
+              <pre className="whitespace-pre-wrap">{debugInfo}</pre>
+            </div>
+          </details>
         )}
       </div>
     </div>
