@@ -1,14 +1,13 @@
+// Updated layout.tsx to handle font loading errors more gracefully
+// Added fallback font handling and improved error resilience
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { SupabaseProvider } from '@/components/supabase-provider';
 import { StarsBackground } from '@/components/ui/stars-background';
 import Navbar from '@/components/navbar';
 import Footer from '@/components/footer';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Celestial Insights - AI Spiritual Guidance',
@@ -22,7 +21,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen flex flex-col`}>
+      <head>
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"
+          rel="stylesheet"
+          crossOrigin="anonymous"
+        />
+      </head>
+      <body className="font-sans min-h-screen flex flex-col antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <SupabaseProvider>
             <div className="flex flex-col min-h-screen bg-background relative">
