@@ -67,32 +67,47 @@ export default function PalmReading() {
     setDiagram('');
 
     try {
-      // Step 1: Get user profile to determine tier
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('subscription_tier')
-        .eq('id', user.id)
-        .single();
+      console.log('Step 1: Starting palm reading generation...');
 
-      if (profileError) {
-        console.error('Profile error:', profileError);
-        // If profile doesn't exist, create it
-        const { error: insertError } = await supabase
+      // Step 1: Ensure user profile exists
+      let userTier = 'free';
+      try {
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .insert({
-            id: user.id,
-            email: user.email,
-            subscription_tier: 'free'
-          });
-        
-        if (insertError) {
-          throw new Error('Failed to create user profile');
+          .select('subscription_tier')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError && profileError.code === 'PGRST116') {
+          // Profile doesn't exist, create it
+          console.log('Step 2: Creating user profile...');
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              email: user.email,
+              subscription_tier: 'free'
+            });
+          
+          if (insertError) {
+            throw new Error(`Failed to create user profile: ${insertError.message}`);
+          }
+          userTier = 'free';
+        } else if (profileError) {
+          throw new Error(`Profile error: ${profileError.message}`);
+        } else {
+          userTier = profile?.subscription_tier || 'free';
         }
+      } catch (profileErr) {
+        console.error('Profile error:', profileErr);
+        // Continue with free tier if profile issues
+        userTier = 'free';
       }
 
-      const userTier = profile?.subscription_tier || 'free';
+      console.log(`Step 3: User tier determined as: ${userTier}`);
 
-      // Step 2: Create palm reading record
+      // Step 2: Create palm reading record in database
+      console.log('Step 4: Creating palm reading record...');
       const { data: palmReading, error: createError } = await supabase
         .from('palm_readings')
         .insert({
@@ -106,13 +121,18 @@ export default function PalmReading() {
 
       if (createError) {
         console.error('Create palm reading error:', createError);
-        throw new Error('Failed to create palm reading record');
+        throw new Error(`Failed to create palm reading record: ${createError.message}`);
       }
 
-      // Step 3: Convert image to base64
+      console.log(`Step 5: Palm reading record created with ID: ${palmReading.id}`);
+
+      // Step 3: Convert image to base64 (NO STORAGE UPLOAD)
+      console.log('Step 6: Converting image to base64...');
       const imageBase64 = await convertToBase64(imageFile);
+      console.log('Step 7: Image converted to base64 successfully');
 
       // Step 4: Call API to process the palm reading
+      console.log('Step 8: Calling palm reading API...');
       const response = await fetch('/api/palm-reading', {
         method: 'POST',
         headers: {
@@ -127,10 +147,13 @@ export default function PalmReading() {
         })
       });
 
+      console.log(`Step 9: API response status: ${response.status}`);
+
       const data = await response.json();
+      console.log('Step 10: API response data:', data);
 
       if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        throw new Error(data.error || `API error! status: ${response.status}`);
       }
 
       if (!data.success) {
@@ -138,10 +161,13 @@ export default function PalmReading() {
       }
 
       // Step 5: Display results
+      console.log('Step 11: Displaying results...');
       setReading(data.reading);
       if (data.diagram) {
         setDiagram(data.diagram);
       }
+
+      console.log('Step 12: Palm reading completed successfully!');
 
     } catch (err) {
       console.error('Palm reading error:', err);
@@ -212,7 +238,7 @@ export default function PalmReading() {
             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
           <p className="text-sm text-gray-500 mt-1">
-            Upload a clear photo of your palm (max 5MB)
+            Upload a clear photo of your palm (max 5MB) - NO storage upload, direct processing only
           </p>
         </div>
 
@@ -243,17 +269,25 @@ export default function PalmReading() {
           {loading ? (
             <div className="flex items-center justify-center">
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-              Analyzing Your Palm...
+              Analyzing Your Palm... (No Storage Upload)
             </div>
           ) : (
-            'Upload and Analyze'
+            'Upload and Analyze (Direct Processing)'
           )}
         </button>
 
         {/* Error Display */}
         {error && (
           <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-700 text-sm">{error}</p>
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <span className="text-red-400">⚠️</span>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">Error</h3>
+                <p className="text-red-700 text-sm mt-1">{error}</p>
+              </div>
+            </div>
           </div>
         )}
 
